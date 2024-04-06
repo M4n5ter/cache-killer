@@ -3,7 +3,6 @@ package mysql
 import (
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
 	"path"
@@ -36,7 +35,8 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 	// listen to the binlog file
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to create a new watcher", "error", err)
+		os.Exit(1)
 	}
 	defer watcher.Close()
 
@@ -45,7 +45,8 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 	// Open the binlog file
 	file, err := os.Open(m.binlogFile)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to open the binlog file", "error", err)
+		os.Exit(1)
 	}
 	defer file.Close()
 
@@ -58,7 +59,7 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 			select {
 			case event, ok := <-watcher.Events:
 				if !ok {
-					log.Println("watcher.Events is not ok")
+					slog.Error("watcher.Events is not ok")
 					continue
 				}
 
@@ -100,19 +101,21 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 					} else if m.currentOffset > 4 {
 						//  FORMAT_DESCRIPTION event should be read by default always (despite that fact passed offset may be higher than 4)
 						if _, err = file.Seek(4, io.SeekStart); err != nil {
-							log.Fatalf("seek to %d error %v", m.currentOffset, err)
+							slog.Error("Failed to seek to the start position", "position", m.currentOffset, "error", err)
 						}
 
 						// Parse the FORMAT_DESCRIPTION event
 						if _, err = m.parser.ParseSingleEvent(file, func(be *replication.BinlogEvent) error { return nil }); err != nil {
-							log.Fatalf("parse FormatDescriptionEvent error %v", err)
+							slog.Error("Failed to parse the FORMAT_DESCRIPTION event", "error", err)
+							os.Exit(1)
 						}
 					}
 
 					// Parse the binlog file from the current offset
 					_, err = file.Seek(m.currentOffset, io.SeekStart)
 					if err != nil {
-						log.Fatal(err)
+						slog.Error("Failed to seek to the start position", "position", m.currentOffset, "error", err)
+						os.Exit(1)
 					}
 
 					err = m.parser.ParseReader(file, func(be *replication.BinlogEvent) error {
@@ -196,11 +199,13 @@ func (m *MysqlBinlog) setup() {
 	// TODO: Get the data directory from the mysql config file
 
 	if err := m.computeBinlogFilePath(); err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to get the newest binlog file path", "error", err)
+		os.Exit(1)
 	}
 
 	if err := m.mapTable(); err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to map table", "error", err)
+		os.Exit(1)
 	}
 }
 

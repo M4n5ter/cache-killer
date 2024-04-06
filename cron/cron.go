@@ -1,8 +1,8 @@
 package cron
 
 import (
-	"log"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/go-co-op/gocron/v2"
@@ -31,7 +31,8 @@ func NewCron(killer cache.CacheKiller) CronJob {
 func (c *cron) ExterminateExiles() {
 	s, err := gocron.NewScheduler()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to create a new scheduler", "error", err)
+		os.Exit(1)
 	}
 	defer s.Shutdown()
 
@@ -60,7 +61,8 @@ func (c *cron) ExterminateExiles() {
 		}
 	}))
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("Failed to create a new job", "error", err)
+		os.Exit(1)
 	}
 
 	// TODO: Alert the operator to handle the indestructibles cache.
@@ -69,7 +71,7 @@ func (c *cron) ExterminateExiles() {
 		for {
 			select {
 			case key := <-c.indestructibles_chan:
-				log.Printf("Indestructible cache: %s\n", key)
+				slog.Warn("Indestructible cache", "key", key)
 			}
 		}
 	}()
