@@ -17,7 +17,7 @@ import (
 )
 
 type MysqlBinlog struct {
-	mappedTable   map[uint64]string         // TODO: Regularly clean up old mappings
+	mappedTable   map[uint64]string         // Mapping of table name and table id
 	parser        *replication.BinlogParser // Binlog parser
 	DataDir       string                    // Data directory of mysql
 	binlogFile    string                    // Binlog file path
@@ -49,6 +49,8 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 	}
 	defer file.Close()
 
+	binlog_index := path.Join(m.DataDir, "binlog.index")
+
 	// When a binlog update or write event happens, we should delete cache.
 	go func() {
 		cache_keys := make([]string, 0, 1000)
@@ -59,7 +61,38 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 					log.Println("watcher.Events is not ok")
 					continue
 				}
-				if event.Op&fsnotify.Write == fsnotify.Write {
+
+				// Change to new binlog file path when binlog.index is updated
+				if event.Op&fsnotify.Write == fsnotify.Write && event.Name == binlog_index {
+					slog.Info("Binlog index file updated, start position from", "offset", m.currentOffset)
+
+					// Compute the newest binlog file path
+					if err := m.computeBinlogFilePath(); err != nil {
+						slog.Error("Failed to get the newest binlog file path", "error", err)
+						os.Exit(1)
+					}
+
+					// Clear the mapped table
+					clear(m.mappedTable)
+
+					// Update the current offset
+					m.currentOffset = 4
+
+					// Open the new binlog file
+					file, err = os.Open(m.binlogFile)
+					if err != nil {
+						slog.Error("Failed to open the new binlog file", "error", err)
+						os.Exit(1)
+					}
+					_, err = file.Seek(m.currentOffset, io.SeekStart)
+					if err != nil {
+						slog.Error("Failed to update the current offset", "error", err)
+						os.Exit(1)
+					}
+				}
+
+				// Parse the binlog file when binlog file is updated
+				if event.Op&fsnotify.Write == fsnotify.Write && (event.Name == m.binlogFile || event.Name == binlog_index) {
 					slog.Info("Binlog file updated, start position from", "offset", m.currentOffset)
 
 					if m.currentOffset < 4 {
@@ -130,6 +163,7 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 					}
 
 				}
+
 			case err, ok := <-watcher.Errors:
 				if !ok {
 					slog.Error("watcher.Errors is not ok")
@@ -150,6 +184,7 @@ func (m *MysqlBinlog) Listen(killer cache.CacheKiller) {
 		}
 	}()
 
+	watcher.Add(binlog_index)
 	watcher.Add(m.binlogFile)
 	slog.Info("Listening to the binlog file", "path", m.binlogFile)
 	select {}
@@ -193,7 +228,7 @@ func (m *MysqlBinlog) updateMappedTable(event *replication.TableMapEvent) {
 	m.mappedTable[table_id] = schema + ":" + table_name
 }
 
-// Get the newest binlog file from the binlog.index file
+// Compute the newest binlog file from the binlog.index file
 func (m *MysqlBinlog) computeBinlogFilePath() error {
 	index := path.Join(m.DataDir, "binlog.index")
 
