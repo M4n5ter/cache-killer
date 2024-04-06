@@ -13,7 +13,7 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/go-mysql-org/go-mysql/replication"
 	"github.com/m4n5ter/cache-killer/cache"
-	database "github.com/m4n5ter/cache-killer/databse"
+	"github.com/m4n5ter/cache-killer/database"
 )
 
 type MysqlBinlog struct {

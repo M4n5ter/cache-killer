@@ -5,7 +5,7 @@ import (
 
 	"github.com/m4n5ter/cache-killer/cache/redis"
 	"github.com/m4n5ter/cache-killer/cron"
-	"github.com/m4n5ter/cache-killer/databse/mysql"
+	"github.com/m4n5ter/cache-killer/database/mysql"
 )
 
 var (
