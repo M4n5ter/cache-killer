@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -24,15 +25,24 @@ func NewCron(killer cache.CacheKiller) CronJob {
 	return &cron{
 		killer:               killer,
 		indestructibles:      make(map[string]uint8),
-		indestructibles_chan: make(chan string, 10),
+		indestructibles_chan: make(chan string, 1),
 	}
 }
 
 func (c *cron) ExterminateExiles() {
+	err := c.schedule()
+	if err != nil {
+		slog.Error("Failed to schedule the cron job", "error", err)
+		os.Exit(1)
+	}
+}
+
+var _ CronJob = (*cron)(nil)
+
+func (c *cron) schedule() (err error) {
 	s, err := gocron.NewScheduler()
 	if err != nil {
-		slog.Error("Failed to create a new scheduler", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("Create a new scheduler: %w", err)
 	}
 	defer s.Shutdown()
 
@@ -61,8 +71,7 @@ func (c *cron) ExterminateExiles() {
 		}
 	}))
 	if err != nil {
-		slog.Error("Failed to create a new job", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("Create a new job: %w", err)
 	}
 
 	// TODO: Alert the operator to handle the indestructibles cache.
@@ -71,7 +80,7 @@ func (c *cron) ExterminateExiles() {
 		for {
 			select {
 			case key := <-c.indestructibles_chan:
-				slog.Warn("Indestructible cache", "key", key)
+				slog.Error("Indestructible cache", "key", key)
 			}
 		}
 	}()
@@ -79,5 +88,3 @@ func (c *cron) ExterminateExiles() {
 	s.Start()
 	select {}
 }
-
-var _ CronJob = (*cron)(nil)
